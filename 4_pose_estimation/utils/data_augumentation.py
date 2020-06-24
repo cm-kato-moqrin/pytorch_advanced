@@ -16,7 +16,7 @@ from torchvision import transforms
 
 class Compose(object):
     """引数transformに格納された変形を順番に実行するクラス
-       対象画像、マスク画像、アノテーション画像を同時に変換させます。 
+       対象画像、マスク画像、アノテーション画像を同時に変換させます。
     """
 
     def __init__(self, transforms):
@@ -28,37 +28,45 @@ class Compose(object):
 
         return meta_data, img, mask_miss
 
-
 class get_anno(object):
     """JSON形式のアノテーションデータを辞書オブジェクトに格納"""
 
     def __call__(self, meta_data, img, mask_miss):
         anno = dict()
-        anno['dataset'] = meta_data['dataset']
-        anno['img_height'] = int(meta_data['img_height'])
-        anno['img_width'] = int(meta_data['img_width'])
+        if meta_data['type'] == 1:
+            anno['type'] = meta_data['type']
+            anno['objpos'] = np.array(meta_data['objpos'])
+            anno['joint_self'] = np.array(meta_data['joint_self'])
+            anno['numOtherPeople'] = int(meta_data['numOtherPeople'])
+        else:
+            anno['dataset'] = meta_data['dataset']
+            anno['type'] = meta_data['type']
+            anno['img_paths'] = (meta_data['img_paths']) # 後で消す
+            anno['img_height'] = int(meta_data['img_height'])
+            anno['img_width'] = int(meta_data['img_width'])
 
-        anno['isValidation'] = meta_data['isValidation']
-        anno['people_index'] = int(meta_data['people_index'])
-        anno['annolist_index'] = int(meta_data['annolist_index'])
+            anno['isValidation'] = meta_data['isValidation']
+            anno['people_index'] = int(meta_data['people_index'])
+            anno['annolist_index'] = int(meta_data['annolist_index'])
 
         # (b) objpos_x (float), objpos_y (float)
-        anno['objpos'] = np.array(meta_data['objpos'])
-        anno['scale_provided'] = meta_data['scale_provided']
-        anno['joint_self'] = np.array(meta_data['joint_self'])
+            anno['objpos'] = np.array(meta_data['objpos'])
+            anno['scale_provided'] = meta_data['scale_provided']
+            anno['joint_self'] = np.array(meta_data['joint_self'])
 
-        anno['numOtherPeople'] = int(meta_data['numOtherPeople'])
-        anno['num_keypoints_other'] = np.array(
-            meta_data['num_keypoints_other'])
-        anno['joint_others'] = np.array(meta_data['joint_others'])
-        anno['objpos_other'] = np.array(meta_data['objpos_other'])
-        anno['scale_provided_other'] = meta_data['scale_provided_other']
-        anno['bbox_other'] = meta_data['bbox_other']
-        anno['segment_area_other'] = meta_data['segment_area_other']
+            anno['numOtherPeople'] = int(meta_data['numOtherPeople'])
+            anno['num_keypoints_other'] = np.array(
+               meta_data['num_keypoints_other'])
+            anno['joint_others'] = np.array(meta_data['joint_others'])
+            anno['objpos_other'] = np.array(meta_data['objpos_other'])
+            anno['scale_provided_other'] = meta_data['scale_provided_other']
+            anno['bbox_other'] = meta_data['bbox_other']
+            anno['segment_area_other'] = meta_data['segment_area_other']
 
-        if anno['numOtherPeople'] == 1:
-            anno['joint_others'] = np.expand_dims(anno['joint_others'], 0)
-            anno['objpos_other'] = np.expand_dims(anno['objpos_other'], 0)
+            if anno['numOtherPeople'] == 1:
+                anno['joint_others'] = np.expand_dims(anno['joint_others'], 0)
+                anno['objpos_other'] = np.expand_dims(anno['objpos_other'], 0)
+
 
         meta_data = anno
 
@@ -85,49 +93,50 @@ class add_neck(object):
 
     def __call__(self, meta_data, img, mask_miss):
         meta = meta_data
-        our_order = [0, 17, 6, 8, 10, 5, 7, 9,
-                     12, 14, 16, 11, 13, 15, 2, 1, 4, 3]
-        # Index 6 is right shoulder and Index 5 is left shoulder
-        right_shoulder = meta['joint_self'][6, :]
-        left_shoulder = meta['joint_self'][5, :]
-        neck = (right_shoulder + left_shoulder) / 2
-
-        # right_shoulder[2]が値1のときはアノテーションがあり画像内に部位も見えている
-        # 値0のときはアノテーションの座標情報はあるが、画像内に部位は映っていない
-        # 値が2のときは画像内に写っておらず、アノテーション付けもない
-        # ※注意　元のMSCOCOの定義と値の意味が変わっている
-        # v=0: not labeled (in which case x=y=0), v=1: labeled but not visible, and v=2: labeled and visible.
-        if right_shoulder[2] == 2 or left_shoulder[2] == 2:
-            neck[2] = 2
-        elif right_shoulder[2] == 1 or left_shoulder[2] == 1:
-            neck[2] = 1
-        else:
-            neck[2] = right_shoulder[2] * left_shoulder[2]
-
-        neck = neck.reshape(1, len(neck))
-        neck = np.round(neck)
-        meta['joint_self'] = np.vstack((meta['joint_self'], neck))
-        meta['joint_self'] = meta['joint_self'][our_order, :]
-        temp = []
-
-        for i in range(meta['numOtherPeople']):
-            right_shoulder = meta['joint_others'][i, 6, :]
-            left_shoulder = meta['joint_others'][i, 5, :]
+        if meta['type'] == 0:
+            our_order = [0, 17, 6, 8, 10, 5, 7, 9,
+                         12, 14, 16, 11, 13, 15, 2, 1, 4, 3]
+            # Index 6 is right shoulder and Index 5 is left shoulder
+            right_shoulder = meta['joint_self'][6, :]
+            left_shoulder = meta['joint_self'][5, :]
             neck = (right_shoulder + left_shoulder) / 2
-            if (right_shoulder[2] == 2 or left_shoulder[2] == 2):
+
+            # right_shoulder[2]が値1のときはアノテーションがあり画像内に部位も見えている
+            # 値0のときはアノテーションの座標情報はあるが、画像内に部位は映っていない
+            # 値が2のときは画像内に写っておらず、アノテーション付けもない
+            # ※注意　元のMSCOCOの定義と値の意味が変わっている
+            # v=0: not labeled (in which case x=y=0), v=1: labeled but not visible, and v=2: labeled and visible.
+            if right_shoulder[2] == 2 or left_shoulder[2] == 2:
                 neck[2] = 2
-            elif (right_shoulder[2] == 1 or left_shoulder[2] == 1):
+            elif right_shoulder[2] == 1 or left_shoulder[2] == 1:
                 neck[2] = 1
             else:
                 neck[2] = right_shoulder[2] * left_shoulder[2]
+
             neck = neck.reshape(1, len(neck))
             neck = np.round(neck)
-            single_p = np.vstack((meta['joint_others'][i], neck))
-            single_p = single_p[our_order, :]
-            temp.append(single_p)
-        meta['joint_others'] = np.array(temp)
+            meta['joint_self'] = np.vstack((meta['joint_self'], neck))
+            meta['joint_self'] = meta['joint_self'][our_order, :]
+            temp = []
 
-        meta_data = meta
+            for i in range(meta['numOtherPeople']):
+                right_shoulder = meta['joint_others'][i, 6, :]
+                left_shoulder = meta['joint_others'][i, 5, :]
+                neck = (right_shoulder + left_shoulder) / 2
+                if (right_shoulder[2] == 2 or left_shoulder[2] == 2):
+                    neck[2] = 2
+                elif (right_shoulder[2] == 1 or left_shoulder[2] == 1):
+                    neck[2] = 1
+                else:
+                    neck[2] = right_shoulder[2] * left_shoulder[2]
+                neck = neck.reshape(1, len(neck))
+                neck = np.round(neck)
+                single_p = np.vstack((meta['joint_others'][i], neck))
+                single_p = single_p[our_order, :]
+                temp.append(single_p)
+            meta['joint_others'] = np.array(temp)
+
+            meta_data = meta
 
         return meta_data, img, mask_miss
 
@@ -135,32 +144,48 @@ class add_neck(object):
 class aug_scale(object):
     def __init__(self):
         self.params_transform = dict()
-        self.params_transform['scale_min'] = 0.5
-        self.params_transform['scale_max'] = 1.1
+        self.params_transform['coco_scale_min'] = 0.5
+        self.params_transform['coco_scale_max'] = 1.1
+        self.params_transform['itop_scale_min'] = 0.9
+        self.params_transform['itop_scale_max'] = 1.8
         self.params_transform['target_dist'] = 0.6
 
     def __call__(self, meta_data, img, mask_miss):
 
-        # ランダムに0.5倍～1.1倍する
+        # ITOPの場合、ランダムに0.9倍～1.8倍する
         dice = random.random()  # (0,1)
-        scale_multiplier = (
-            self.params_transform['scale_max'] - self.params_transform['scale_min']) * dice + self.params_transform['scale_min']
+        if meta_data['type'] == 1:
+            scale_multiplier = (
+                self.params_transform['itop_scale_max'] - self.params_transform['itop_scale_min']) * dice + self.params_transform['itop_scale_min']
+            scale_abs = self.params_transform['target_dist']
+        else:
+         # COCOの場合、ランダムに0.5倍～1.1倍する
+             scale_multiplier = (
+                self.params_transform['coco_scale_max'] - self.params_transform['coco_scale_min']) * dice + self.params_transform['coco_scale_min']
+             scale_abs = self.params_transform['target_dist'] / \
+                 meta_data['scale_provided']
 
-        scale_abs = self.params_transform['target_dist'] / \
-            meta_data['scale_provided']
         scale = scale_abs * scale_multiplier
-        img = cv2.resize(img, (0, 0), fx=scale, fy=scale,
-                         interpolation=cv2.INTER_CUBIC)
+
+        try:
+            img = cv2.resize(img, None, fx=scale, fy=scale,
+                              interpolation=cv2.INTER_CUBIC)
+        except:
+             print('Error')
 
         mask_miss = cv2.resize(mask_miss, (0, 0), fx=scale,
                                fy=scale, interpolation=cv2.INTER_CUBIC)
 
         # modify meta data
-        meta_data['objpos'] *= scale
-        meta_data['joint_self'][:, :2] *= scale
-        if (meta_data['numOtherPeople'] != 0):
-            meta_data['objpos_other'] *= scale
-            meta_data['joint_others'][:, :, :2] *= scale
+        if meta_data['type'] == 1:
+            meta_data['objpos'] = meta_data['objpos'] * scale
+            meta_data['joint_self'][:, :2] = meta_data['joint_self'][:, :2] * scale
+        else:
+            meta_data['objpos'] *= scale
+            meta_data['joint_self'][:, :2] *= scale
+            if (meta_data['numOtherPeople'] != 0):
+                meta_data['objpos_other'] *= scale
+                meta_data['joint_others'][:, :, :2] *= scale
         return meta_data, img, mask_miss
 
 
@@ -242,21 +267,32 @@ class aug_rotate(object):
 class aug_croppad(object):
     def __init__(self):
         self.params_transform = dict()
-        self.params_transform['center_perterb_max'] = 40
+        self.params_transform['coco_center_perterb_max'] = 40
+        self.params_transform['itop_center_perterb_max'] = 20
         self.params_transform['crop_size_x'] = 368
         self.params_transform['crop_size_y'] = 368
 
     def __call__(self, meta_data, img, mask_miss):
 
-        # ランダムにオフセットを用意 -40から40
+
+
         dice_x = random.random()  # (0,1)
         dice_y = random.random()  # (0,1)
         crop_x = int(self.params_transform['crop_size_x'])
         crop_y = int(self.params_transform['crop_size_y'])
-        x_offset = int((dice_x - 0.5) * 2 *
-                       self.params_transform['center_perterb_max'])
-        y_offset = int((dice_y - 0.5) * 2 *
-                       self.params_transform['center_perterb_max'])
+
+        # ITOPの場合、ランダムにオフセットを用意 -20から20
+        if meta_data['type'] == 1:
+            x_offset = int((dice_x - 0.5) * 2 *
+                           self.params_transform['itop_center_perterb_max'])
+            y_offset = int((dice_y - 0.5) * 2 *
+                           self.params_transform['itop_center_perterb_max'])
+        # ランダムにオフセットを用意 -40から40
+        else:
+            x_offset = int((dice_x - 0.5) * 2 *
+                           self.params_transform['coco_center_perterb_max'])
+            y_offset = int((dice_y - 0.5) * 2 *
+                           self.params_transform['coco_center_perterb_max'])
 
         center = meta_data['objpos'] + np.array([x_offset, y_offset])
         center = center.astype(int)
@@ -292,8 +328,14 @@ class aug_croppad(object):
         offset_up = crop_y / 2 - center[1]
 
         offset = np.array([offset_left, offset_up])
-        meta_data['objpos'] += offset
-        meta_data['joint_self'][:, :2] += offset
+
+        if meta_data['type'] == 1:
+            meta_data['objpos'] = meta_data['objpos'] + offset
+            meta_data['joint_self'][:, :2] = meta_data['joint_self'][:, :2] + offset
+        else:
+            meta_data['objpos'] += offset
+            meta_data['joint_self'][:, :2] += offset
+
 
         # 画像からはみ出ていないかチェック
         # 条件式4つのORを計算する
@@ -316,7 +358,6 @@ class aug_croppad(object):
                                          meta_data['joint_others'][:, :, 1] < 0))
 
             meta_data['joint_others'][mask == True, 2] = 2
-
         return meta_data, img, mask_miss
 
 
@@ -343,27 +384,27 @@ class aug_flip(object):
             '''
             The order in this work:
                 (0-'nose'   1-'neck' 2-'right_shoulder' 3-'right_elbow' 4-'right_wrist'
-                5-'left_shoulder' 6-'left_elbow'        7-'left_wrist'  8-'right_hip'  
-                9-'right_knee'   10-'right_ankle'   11-'left_hip'   12-'left_knee' 
-                13-'left_ankle'  14-'right_eye'     15-'left_eye'   16-'right_ear' 
+                5-'left_shoulder' 6-'left_elbow'        7-'left_wrist'  8-'right_hip'
+                9-'right_knee'   10-'right_ankle'   11-'left_hip'   12-'left_knee'
+                13-'left_ankle'  14-'right_eye'     15-'left_eye'   16-'right_ear'
                 17-'left_ear' )
             '''
             meta_data['objpos'][0] = w - 1 - meta_data['objpos'][0]
             meta_data['joint_self'][:, 0] = w - \
                 1 - meta_data['joint_self'][:, 0]
-            # print meta['joint_self']
             meta_data['joint_self'] = meta_data['joint_self'][[0, 1, 5, 6,
                                                                7, 2, 3, 4, 11, 12, 13, 8, 9, 10, 15, 14, 17, 16]]
 
-            num_other_people = meta_data['numOtherPeople']
-            if (num_other_people != 0):
-                meta_data['objpos_other'][:, 0] = w - \
-                    1 - meta_data['objpos_other'][:, 0]
-                meta_data['joint_others'][:, :, 0] = w - \
-                    1 - meta_data['joint_others'][:, :, 0]
-                for i in range(num_other_people):
-                    meta_data['joint_others'][i] = meta_data['joint_others'][i][[
-                        0, 1, 5, 6, 7, 2, 3, 4, 11, 12, 13, 8, 9, 10, 15, 14, 17, 16]]
+            if meta_data['type'] != 1:
+                num_other_people = meta_data['numOtherPeople']
+                if (num_other_people != 0):
+                    meta_data['objpos_other'][:, 0] = w - \
+                        1 - meta_data['objpos_other'][:, 0]
+                    meta_data['joint_others'][:, :, 0] = w - \
+                        1 - meta_data['joint_others'][:, :, 0]
+                    for i in range(num_other_people):
+                        meta_data['joint_others'][i] = meta_data['joint_others'][i][[
+                            0, 1, 5, 6, 7, 2, 3, 4, 11, 12, 13, 8, 9, 10, 15, 14, 17, 16]]
 
         return meta_data, img, mask_miss
 
@@ -449,6 +490,7 @@ class no_Normalize_Tensor(object):
                                                          :, i] - self.color_mean[i]
             preprocessed_img[:, :, i] = preprocessed_img[:,
                                                          :, i] / self.color_std[i]
+
 
         # （幅、高さ、色）→（色、幅、高さ）
         img = preprocessed_img.transpose((2, 0, 1)).astype(np.float32)

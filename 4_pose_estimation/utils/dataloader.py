@@ -147,6 +147,7 @@ def get_ground_truth(meta, mask_miss):
             gaussian_map = heatmaps[:, :, i]
             heatmaps[:, :, i] = putGaussianMaps(
                 center, gaussian_map, params_transform)
+        # coco_dataのみ
         for j in range(nop):
             if (meta['joint_others'][j, i, 2] <= 1):
                 center = meta['joint_others'][j, i, :2]
@@ -175,6 +176,7 @@ def get_ground_truth(meta, mask_miss):
                                                             centerB=centerB,
                                                             accumulate_vec_map=vec_map,
                                                             count=count, params_transform=params_transform)
+        # coco_dataのみ
         for j in range(nop):
             if (meta['joint_others'][j, mid_1[i] - 1, 2] <= 1 and meta['joint_others'][j, mid_2[i] - 1, 2] <= 1):
                 centerA = meta['joint_others'][j, mid_1[i] - 1, :2]
@@ -203,7 +205,7 @@ def make_datapath_list(rootpath):
     """
 
     # アノテーションのJSONファイルを読み込む
-    json_path = osp.join(rootpath, 'COCO.json')
+    json_path = osp.join(rootpath, 'itop_coco_extract.json')
     with open(json_path) as data_file:
         data_this = json.load(data_file)
         data_json = data_this['root']
@@ -213,10 +215,10 @@ def make_datapath_list(rootpath):
     train_indexes = []
     val_indexes = []
     for count in range(num_samples):
-        if data_json[count]['isValidation'] != 0.:
-            val_indexes.append(count)
-        else:
+        if 'train' in data_json[count]["img_paths"]:
             train_indexes.append(count)
+        else:
+            val_indexes.append(count)
 
     # 画像ファイルパスを格納
     train_img_list = list()
@@ -236,12 +238,19 @@ def make_datapath_list(rootpath):
 
     for idx in train_indexes:
         img_idx = data_json[idx]['img_paths'][-16:-4]
-        anno_path = "./data/mask/train2014/mask_COCO_train2014_" + img_idx+'.jpg'
+        if data_json[idx]['type'] == 1:
+            anno_path = "./data/mask/MaskImg" + '.jpg'
+        else:
+            anno_path = "./data/mask/train2014/mask_COCO_train2014_" + img_idx+'.jpg'
         train_mask_list.append(anno_path)
 
     for idx in val_indexes:
         img_idx = data_json[idx]['img_paths'][-16:-4]
-        anno_path = "./data/mask/val2014/mask_COCO_val2014_" + img_idx+'.jpg'
+
+        if data_json[idx]['type'] == 1:
+            anno_path = "./data/mask/MaskImg" + '.jpg'
+        else:
+            anno_path = "./data/mask/val2014/mask_COCO_val2014_" + img_idx+'.jpg'
         val_mask_list.append(anno_path)
 
     # アノテーションデータを格納
@@ -276,10 +285,16 @@ class DataTransform():
                 aug_flip(),  # 左右反転
                 remove_illegal_joint(),  # 画像からはみ出たアノテーションを除去
                 Normalize_Tensor()  # 色情報の標準化とテンソル化
-                # no_Normalize_Tensor()  # 本節のみ、色情報の標準化をなくす
             ]),
             'val': Compose([
-                # 本書では検証は省略
+                get_anno(),  # JSONからアノテーションを辞書に格納
+                add_neck(),  # アノテーションデータの順番を変更し、さらに首のアノテーションデータを追加
+                aug_scale(),  # 拡大縮小
+                aug_rotate(),  # 回転
+                aug_croppad(),  # 切り出し
+                aug_flip(),  # 左右反転
+                remove_illegal_joint(),  # 画像からはみ出たアノテーションを除去
+                Normalize_Tensor()  # 色情報の標準化とテンソル化
             ])
         }
 
@@ -337,11 +352,11 @@ class COCOkeypointsDataset(data.Dataset):
 
         # 2. マスクとアノテーション読み込み
         mask_miss = cv2.imread(self.mask_list[index])
-        meat_data = self.meta_list[index]
+        meta_data = self.meta_list[index]
 
         # 3. 画像前処理
         meta_data, img, mask_miss = self.transform(
-            self.phase, meat_data, img, mask_miss)
+            self.phase, meta_data, img, mask_miss)
 
         # 4. 正解アノテーションデータの取得
         mask_miss_numpy = mask_miss.numpy().transpose((1, 2, 0))
